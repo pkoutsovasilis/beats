@@ -17,7 +17,7 @@
 
 //go:build !integration
 
-package monitor
+package fsnotify
 
 import (
 	"errors"

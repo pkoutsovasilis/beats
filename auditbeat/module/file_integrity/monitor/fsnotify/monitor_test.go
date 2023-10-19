@@ -17,7 +17,7 @@
 
 //go:build !integration
 
-package monitor
+package fsnotify
 
 import (
 	"errors"
@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elastic/beats/v7/auditbeat/module/file_integrity/monitor"
 	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/assert"
 )
@@ -365,7 +366,7 @@ func TestRecursiveExcludedPaths(t *testing.T) {
 	}
 }
 
-func testDirOps(t *testing.T, dir string, watcher Watcher) {
+func testDirOps(t *testing.T, dir string, watcher monitor.Watcher) {
 	fpath := filepath.Join(dir, "file.txt")
 	fpath2 := filepath.Join(dir, "file2.txt")
 
@@ -405,7 +406,7 @@ func testDirOps(t *testing.T, dir string, watcher Watcher) {
 	// under Windows in two cases:
 	// - Writes to the parent dir (metadata updates after update loop above?)
 	// - Delayed writes to "fpath" file, not discarded by above consumer loop.
-	readIgnoreWrites := func(t *testing.T, w Watcher) (fsnotify.Event, error) {
+	readIgnoreWrites := func(t *testing.T, w monitor.Watcher) (fsnotify.Event, error) {
 		for {
 			ev, err := readTimeout(t, w)
 			if err != nil || ev.Op != fsnotify.Write {
@@ -447,8 +448,8 @@ func testDirOps(t *testing.T, dir string, watcher Watcher) {
 
 var errReadTimeout = errors.New("read timeout")
 
-// helper to read from channel
-func readTimeout(tb testing.TB, watcher Watcher) (fsnotify.Event, error) {
+// filesystem to read from channel
+func readTimeout(tb testing.TB, watcher monitor.Watcher) (fsnotify.Event, error) {
 	timer := time.NewTimer(3 * time.Second)
 	defer timer.Stop()
 	for {

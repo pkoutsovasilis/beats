@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-package monitor
+package fsnotify
 
 import (
 	"fmt"
@@ -40,7 +40,7 @@ type recursiveWatcher struct {
 	isExcludedPath func(path string) bool
 }
 
-func newRecursiveWatcher(inner *fsnotify.Watcher, IsExcludedPath func(path string) bool) *recursiveWatcher {
+func newRecursiveWatcher(inner *fsnotify.Watcher, IsExcludedPath func(path string) bool, moduleName string) *recursiveWatcher {
 	return &recursiveWatcher{
 		inner:          inner,
 		tree:           FileTree{},

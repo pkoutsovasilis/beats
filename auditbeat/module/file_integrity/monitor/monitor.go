@@ -18,12 +18,31 @@
 package monitor
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/fsnotify/fsnotify"
 )
 
 const (
 	moduleName = "file_integrity"
 )
+
+type WatcherAlloc func(recursive bool, IsExcludedPath func(path string) bool) (Watcher, error)
+
+var watcherFactories map[string]WatcherAlloc
+var defaultFactory WatcherAlloc
+
+func init() {
+	watcherFactories = make(map[string]WatcherAlloc)
+}
+
+func Register(isDefault bool, name string, allocFn WatcherAlloc) {
+	watcherFactories[name] = allocFn
+	if isDefault {
+		defaultFactory = allocFn
+	}
+}
 
 // Watcher is an interface for a file watcher akin to fsnotify.Watcher
 // with an additional Start method.
@@ -35,17 +54,24 @@ type Watcher interface {
 	Start() error
 }
 
-// New creates a new Watcher backed by fsnotify with optional recursive
+// New creates a new Watcher backed by fsnotify (default) with optional recursive
 // logic.
 func New(recursive bool, IsExcludedPath func(path string) bool) (Watcher, error) {
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
+	if defaultFactory == nil {
+		return nil, errors.New("no default watcher backend set")
 	}
-	// Use our simulated recursive watches unless the fsnotify implementation
-	// supports OS-provided recursive watches
-	if recursive && watcher.SetRecursive() != nil {
-		return newRecursiveWatcher(watcher, IsExcludedPath), nil
+
+	return defaultFactory(recursive, IsExcludedPath)
+}
+
+// NewWithBackend creates a new Watcher backed by fsnotify with optional recursive
+// logic.
+func NewWithBackend(backendName string, recursive bool, IsExcludedPath func(path string) bool) (Watcher, error) {
+
+	watchFn, exists := watcherFactories[backendName]
+	if !exists {
+		return nil, fmt.Errorf("backend with name %s not found", backendName)
 	}
-	return (*nonRecursiveWatcher)(watcher), nil
+
+	return watchFn(recursive, IsExcludedPath)
 }
