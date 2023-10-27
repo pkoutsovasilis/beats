@@ -11,7 +11,7 @@ import (
 func init() {
 	registerKProbe[VFSSetXAttibutes]("vfs_setxattr",
 		"parent_ino=+64(+48(+24($arg2))):u64 "+
-			"file_name=+0(+40($arg1)):string "+
+			"file_name=+0(+40($arg2)):string "+
 			"dev_major=+16(+40(+48($arg2))):b12@20/32 "+
 			"dev_minor=+16(+40(+48($arg2))):b10@0/32")
 
