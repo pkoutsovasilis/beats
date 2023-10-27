@@ -16,9 +16,13 @@ type dirEntryKey struct {
 	Name      string
 }
 
+type dirEntryChildren map[*dirEntryVal]struct{}
+
 type dirEntryVal struct {
-	Parent *dirEntryVal
-	Name   string
+	Parent    *dirEntryVal
+	Children  dirEntryChildren
+	Name      string
+	ParentIno uint64
 }
 
 func (d *dirEntryVal) BuildPath() string {
@@ -41,7 +45,56 @@ func init() {
 	dirCache = make(dirEntryCache)
 }
 
-func (c dirEntryCache) WalkDir(dirPath string, fullRootPath bool, followSymLinks bool, IsExcludedPath func(path string) bool) error {
+func wipeRecursive(c dirEntryCache, val *dirEntryVal, dev uint64) {
+	if val.Children == nil || len(val.Children) == 0 {
+		delete(c, dirEntryKey{
+			ParentIno: val.ParentIno,
+			Dev:       dev,
+			Name:      val.Name,
+		})
+		return
+	}
+
+	for child := range val.Children {
+		wipeRecursive(c, child, dev)
+	}
+
+	delete(c, dirEntryKey{
+		ParentIno: val.ParentIno,
+		Dev:       dev,
+		Name:      val.Name,
+	})
+}
+
+func walkChildrenRecursive(c dirEntryCache, rootPath string, joinPath bool, val *dirEntryVal, call func(path string)) {
+	var path string
+	if joinPath {
+		path = filepath.Join(rootPath, val.Name)
+	} else {
+		path = rootPath
+	}
+
+	if val.Children == nil || len(val.Children) == 0 {
+		call(path)
+		return
+	}
+
+	for child := range val.Children {
+		walkChildrenRecursive(c, path, true, child, call)
+	}
+
+	call(path)
+}
+
+func (c dirEntryCache) WipeWithChildren(val *dirEntryVal, dev uint64) {
+	wipeRecursive(c, val, dev)
+}
+
+func (c dirEntryCache) WalkEntry(val *dirEntryVal, call func(path string)) {
+	walkChildrenRecursive(c, val.BuildPath(), false, val, call)
+}
+
+func (c dirEntryCache) WalkDir(dirPath string, fullRootPath bool, IsExcludedPath func(path string) bool) error {
 	if c == nil {
 		return fmt.Errorf("nil map")
 	}
@@ -74,14 +127,22 @@ func (c dirEntryCache) WalkDir(dirPath string, fullRootPath bool, followSymLinks
 				filename = filepath.Base(path)
 			}
 
+			cacheEntry := &dirEntryVal{
+				Parent:    nil,
+				Name:      filename,
+				Children:  make(dirEntryChildren),
+				ParentIno: dirEntryInfo.Sys().(*syscall.Stat_t).Ino,
+			}
+
+			if dirEntryInfo.IsDir() {
+				cacheEntry.Children = make(dirEntryChildren)
+			}
+
 			c[dirEntryKey{
 				ParentIno: dirEntryInfo.Sys().(*syscall.Stat_t).Ino,
 				Name:      mount.Subtree,
 				Dev:       uint64(mount.DeviceNumber),
-			}] = &dirEntryVal{
-				Parent: nil,
-				Name:   filename,
-			}
+			}] = cacheEntry
 			return nil
 		}
 
@@ -108,14 +169,26 @@ func (c dirEntryCache) WalkDir(dirPath string, fullRootPath bool, followSymLinks
 				filename = filepath.Base(path)
 			}
 
+			cacheEntry := &dirEntryVal{
+				Parent:    parentCacheVal,
+				Name:      filename,
+				Children:  nil,
+				ParentIno: parentDirEntryInfo.Sys().(*syscall.Stat_t).Ino,
+			}
+
+			if dirEntryInfo.IsDir() {
+				cacheEntry.Children = make(dirEntryChildren)
+			}
+
+			if parentCacheVal != nil {
+				parentCacheVal.Children[cacheEntry] = struct{}{}
+			}
+
 			c[dirEntryKey{
 				ParentIno: parentDirEntryInfo.Sys().(*syscall.Stat_t).Ino,
 				Name:      filepath.Base(path),
 				Dev:       uint64(mount.DeviceNumber),
-			}] = &dirEntryVal{
-				Parent: parentCacheVal,
-				Name:   filename,
-			}
+			}] = cacheEntry
 			return nil
 		}
 
@@ -142,14 +215,26 @@ func (c dirEntryCache) WalkDir(dirPath string, fullRootPath bool, followSymLinks
 			filename = filepath.Base(path)
 		}
 
+		cacheEntry := &dirEntryVal{
+			Parent:    parentCacheEntry,
+			Name:      filename,
+			Children:  nil,
+			ParentIno: parentDirEntryInfo.Sys().(*syscall.Stat_t).Ino,
+		}
+
+		if dirEntryInfo.IsDir() {
+			cacheEntry.Children = make(dirEntryChildren)
+		}
+
+		if parentCacheEntry != nil {
+			parentCacheEntry.Children[cacheEntry] = struct{}{}
+		}
+
 		c[dirEntryKey{
 			ParentIno: parentDirEntryInfo.Sys().(*syscall.Stat_t).Ino,
 			Name:      filepath.Base(path),
 			Dev:       uint64(mount.DeviceNumber),
-		}] = &dirEntryVal{
-			Parent: parentCacheEntry,
-			Name:   filename,
-		}
+		}] = cacheEntry
 
 		return nil
 

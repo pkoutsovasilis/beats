@@ -57,7 +57,7 @@ func (v *VFSChmod) ShouldIntercept(dirCache dirEntryCache) bool {
 
 func (v *VFSChmod) Emit(_ dirEntryCache, emitter Emitter) error {
 	return emitter.Emit(FilesystemEvent{
-		Type:     EventTypeUpdated,
+		Type:     EventTypeChmod,
 		FilePath: v.cacheEntry.BuildPath(),
 		PID:      v.PID,
 	})

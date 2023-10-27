@@ -63,9 +63,14 @@ func (v *VFSSymLink) ShouldIntercept(dirCache dirEntryCache) bool {
 func (v *VFSSymLink) Emit(dirCache dirEntryCache, emitter Emitter) error {
 	cacheEntry := &dirEntryVal{
 		Parent: v.ParentEntry,
-		Name:   v.FileName,
+		//TODO(panos) if we follow symlinks this can be a dir so we need to allocate
+		//  Children. Although inotify backend doesn't follow symlinks by default
+		Children:  nil,
+		Name:      v.FileName,
+		ParentIno: v.ParentIno,
 	}
 
+	v.ParentEntry.Children[cacheEntry] = struct{}{}
 	dirCache[dirEntryKey{
 		ParentIno: v.ParentIno,
 		Name:      v.FileName,

@@ -61,9 +61,13 @@ func (v *VFSFAllocate) ShouldIntercept(dirCache dirEntryCache) bool {
 
 func (v *VFSFAllocate) Emit(dirCache dirEntryCache, emitter Emitter) error {
 	cacheEntry := &dirEntryVal{
-		Parent: v.parentCacheEntry,
-		Name:   v.FileName,
+		Parent:    v.parentCacheEntry,
+		Children:  nil,
+		Name:      v.FileName,
+		ParentIno: v.ParentIno,
 	}
+
+	v.parentCacheEntry.Children[cacheEntry] = struct{}{}
 
 	dirCache[dirEntryKey{
 		ParentIno: v.ParentIno,

@@ -3,6 +3,10 @@ package kprobes
 import (
 	"github.com/elastic/beats/v7/auditbeat/module/file_integrity/monitor/tracing"
 	"golang.org/x/sys/unix"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"syscall"
 )
 
 // int vfs_rename(struct renamedata *)
@@ -88,15 +92,12 @@ func (v *VFSRename) Emit(dirCache dirEntryCache, emitter Emitter) error {
 	oldPath := v.srcCacheEntry.BuildPath()
 
 	if v.dstParentCacheEntry == nil {
+
 		// destination outside our monitoring paths
-		delete(dirCache, dirEntryKey{
-			ParentIno: v.SrcParentIno,
-			Name:      v.SrcFileName,
-			Dev:       unix.Mkdev(v.SrcDevMajor, v.SrcDevMinor),
-		})
+		dirCache.WipeWithChildren(v.srcCacheEntry, unix.Mkdev(v.SrcDevMajor, v.SrcDevMinor))
 
 		err := emitter.Emit(FilesystemEvent{
-			Type:     EventTypeDeleted,
+			Type:     EventTypeMoved,
 			FilePath: oldPath,
 			PID:      v.PID,
 		})
@@ -123,21 +124,102 @@ func (v *VFSRename) Emit(dirCache dirEntryCache, emitter Emitter) error {
 			Dev:       unix.Mkdev(v.DestParentDevMajor, v.DestParentDevMinor),
 		}] = cacheEntry
 
-		if isSrcDir {
-			path := cacheEntry.BuildPath()
-			// TODO(panos) emit events from walking dir
-			_ = dirCache.WalkDir(path, false, false, nil)
-		}
+		fileDir := cacheEntry.BuildPath()
 
-		return emitter.Emit(FilesystemEvent{
+		err := emitter.Emit(FilesystemEvent{
 			Type:     EventTypeCreated,
-			FilePath: cacheEntry.BuildPath(),
+			FilePath: fileDir,
 			PID:      v.PID,
 		})
+		if err != nil {
+			return err
+		}
+
+		if !isSrcDir {
+			// this file is not a directory so no need to proceed
+			return nil
+		}
+
+		cacheEntry.Children = make(dirEntryChildren)
+
+		// here we need to go to the filesystem and walk recursively
+		// all the content of the dir that just moved in
+		var createdPaths []string
+		cacheEntriesByPath := make(map[string]*dirEntryVal)
+		cacheEntriesByPath[fileDir] = cacheEntry
+
+		rootInoChecked := false
+		_ = filepath.WalkDir(fileDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+
+			if path == fileDir {
+				parentDir := filepath.Dir(path)
+				parentDirEntryInfo, err := os.Lstat(parentDir)
+				if err != nil {
+					return nil
+				}
+
+				rootInoChecked = parentDirEntryInfo.Sys().(*syscall.Stat_t).Ino == v.DestParentIno
+				return nil
+			}
+
+			if !rootInoChecked {
+				return nil
+			}
+
+			parentDir := filepath.Dir(path)
+			parentDirEntryInfo, err := os.Lstat(parentDir)
+			if err != nil {
+				return nil
+			}
+
+			parentCacheEntry, exists := cacheEntriesByPath[parentDir]
+			if !exists {
+				return nil
+			}
+
+			cacheEntry = &dirEntryVal{
+				Parent:    parentCacheEntry,
+				Children:  nil,
+				Name:      filepath.Base(path),
+				ParentIno: parentDirEntryInfo.Sys().(*syscall.Stat_t).Ino,
+			}
+
+			if d.IsDir() {
+				cacheEntry.Children = make(dirEntryChildren)
+			}
+
+			parentCacheEntry.Children[cacheEntry] = struct{}{}
+
+			cacheEntriesByPath[path] = cacheEntry
+			dirCache[dirEntryKey{
+				ParentIno: parentDirEntryInfo.Sys().(*syscall.Stat_t).Ino,
+				Name:      filepath.Base(path),
+				Dev:       unix.Mkdev(v.DestParentDevMajor, v.DestParentDevMinor),
+			}] = cacheEntry
+
+			createdPaths = append(createdPaths, path)
+			return nil
+		})
+
+		for _, path := range createdPaths {
+			if err := emitter.Emit(FilesystemEvent{
+				Type:     EventTypeCreated,
+				FilePath: path,
+				PID:      v.PID,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 
 	// both src and dest inside the same filesystem and our monitoring paths
-
+	// so we soft "delete" the old entry from parent and map, and we attach it
+	// to new parent with new map entry
+	delete(v.srcCacheEntry.Parent.Children, v.srcCacheEntry)
 	delete(dirCache, dirEntryKey{
 		ParentIno: v.SrcParentIno,
 		Name:      v.SrcFileName,
@@ -145,16 +227,17 @@ func (v *VFSRename) Emit(dirCache dirEntryCache, emitter Emitter) error {
 	})
 
 	err := emitter.Emit(FilesystemEvent{
-		Type:     EventTypeDeleted,
+		Type:     EventTypeMoved,
 		FilePath: oldPath,
 		PID:      v.PID,
 	})
-
 	if err != nil {
 		return err
 	}
 
 	v.srcCacheEntry.Parent = v.dstParentCacheEntry
+	v.srcCacheEntry.Name = v.DestFileName
+	v.dstParentCacheEntry.Children[v.srcCacheEntry] = struct{}{}
 
 	dirCache[dirEntryKey{
 		ParentIno: v.DestParentIno,
@@ -162,11 +245,15 @@ func (v *VFSRename) Emit(dirCache dirEntryCache, emitter Emitter) error {
 		Dev:       unix.Mkdev(v.DestParentDevMajor, v.DestParentDevMinor),
 	}] = v.srcCacheEntry
 
-	return emitter.Emit(FilesystemEvent{
-		Type:     EventTypeCreated,
-		FilePath: v.srcCacheEntry.BuildPath(),
-		PID:      v.PID,
+	dirCache.WalkEntry(v.srcCacheEntry, func(path string) {
+		_ = emitter.Emit(FilesystemEvent{
+			Type:     EventTypeCreated,
+			FilePath: path,
+			PID:      v.PID,
+		})
 	})
+
+	return nil
 }
 
 func (v *VFSRename) Assume(dirCache dirEntryCache, emitter Emitter) error {

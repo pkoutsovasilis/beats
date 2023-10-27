@@ -28,7 +28,7 @@ type watch struct {
 	isExcludedPath func(path string) bool
 }
 
-func New(recursive bool, IsExcludedPath func(path string) bool) (monitor.Watcher, error) {
+func New(_ bool, IsExcludedPath func(path string) bool) (monitor.Watcher, error) {
 
 	traceFS, err := tracing.NewTraceFS()
 	if err != nil {
@@ -72,6 +72,16 @@ func (w *watch) Emit(event FilesystemEvent) error {
 			Name: event.FilePath,
 			Op:   fsnotify.Remove,
 		}
+	case EventTypeMoved:
+		ev = fsnotify.Event{
+			Name: event.FilePath,
+			Op:   fsnotify.Rename,
+		}
+	case EventTypeChown, EventTypeAttr, EventTypeXAttr, EventTypeChmod:
+		ev = fsnotify.Event{
+			Name: event.FilePath,
+			Op:   fsnotify.Chmod,
+		}
 	}
 
 	for {
@@ -80,7 +90,7 @@ func (w *watch) Emit(event FilesystemEvent) error {
 			return nil
 
 		case path := <-w.addC:
-			return dirCache.WalkDir(path, true, false, w.isExcludedPath)
+			return dirCache.WalkDir(path, true, w.isExcludedPath)
 
 		case w.eventC <- ev:
 			return nil
@@ -93,13 +103,12 @@ func (w *watch) Add(path string) error {
 		w.addC <- path
 		return <-w.errC
 	}
-	return dirCache.WalkDir(path, true, false, w.isExcludedPath)
+	return dirCache.WalkDir(path, true, w.isExcludedPath)
 }
 
 func (w *watch) Close() error {
 	close(w.eventC)
 	return w.perfChannel.Close()
-	return nil
 }
 
 func (w *watch) EventChannel() <-chan fsnotify.Event {
@@ -141,7 +150,12 @@ func (w *watch) Start() error {
 	}
 
 	go func() {
-		defer w.Close()
+		defer func() {
+			closeErr := w.Close()
+			if closeErr != nil {
+				w.log.Warnf("error at closing watcher: %v", closeErr)
+			}
+		}()
 
 		for {
 			select {
@@ -149,7 +163,7 @@ func (w *watch) Start() error {
 				return
 
 			case path := <-w.addC:
-				w.errC <- dirCache.WalkDir(path, true, false, nil)
+				w.errC <- dirCache.WalkDir(path, true, w.isExcludedPath)
 
 			case event, ok := <-channel.C():
 				if !ok {

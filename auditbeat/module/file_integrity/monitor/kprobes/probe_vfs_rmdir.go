@@ -57,7 +57,7 @@ func (v *VFSRmdir) ShouldIntercept(dirCache dirEntryCache) bool {
 }
 
 func (v *VFSRmdir) Emit(dirCache dirEntryCache, emitter Emitter) error {
-
+	delete(v.cacheEntry.Parent.Children, v.cacheEntry)
 	delete(dirCache, dirEntryKey{
 		ParentIno: v.ParentIno,
 		Dev:       unix.Mkdev(v.DevMajor, v.DevMinor),

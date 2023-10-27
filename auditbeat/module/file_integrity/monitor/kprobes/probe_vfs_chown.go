@@ -57,7 +57,7 @@ func (v *VFSChown) ShouldIntercept(dirCache dirEntryCache) bool {
 
 func (v *VFSChown) Emit(_ dirEntryCache, emitter Emitter) error {
 	return emitter.Emit(FilesystemEvent{
-		Type:     EventTypeUpdated,
+		Type:     EventTypeChown,
 		FilePath: v.cacheEntry.BuildPath(),
 		PID:      v.PID,
 	})

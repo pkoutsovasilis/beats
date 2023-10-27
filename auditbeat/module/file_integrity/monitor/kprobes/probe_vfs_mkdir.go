@@ -64,9 +64,13 @@ func (v *VFSMkdir) ShouldIntercept(dirCache dirEntryCache) bool {
 func (v *VFSMkdir) Emit(dirCache dirEntryCache, emitter Emitter) error {
 
 	cacheEntry := &dirEntryVal{
-		Parent: v.ParentEntry,
-		Name:   v.FileName,
+		Parent:    v.ParentEntry,
+		Children:  make(dirEntryChildren),
+		Name:      v.FileName,
+		ParentIno: v.ParentIno,
 	}
+
+	v.ParentEntry.Children[cacheEntry] = struct{}{}
 
 	dirCache[dirEntryKey{
 		ParentIno: v.ParentIno,

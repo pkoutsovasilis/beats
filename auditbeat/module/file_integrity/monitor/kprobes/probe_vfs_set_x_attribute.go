@@ -56,9 +56,9 @@ func (v *VFSSetXAttibutes) ShouldIntercept(dirCache dirEntryCache) bool {
 	return true
 }
 
-func (v *VFSSetXAttibutes) Emit(dirCache dirEntryCache, emitter Emitter) error {
+func (v *VFSSetXAttibutes) Emit(_ dirEntryCache, emitter Emitter) error {
 	return emitter.Emit(FilesystemEvent{
-		Type:     EventTypeUpdated,
+		Type:     EventTypeXAttr,
 		FilePath: v.cacheEntry.BuildPath(),
 		PID:      v.PID,
 	})

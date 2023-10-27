@@ -7,6 +7,11 @@ const (
 	EventTypeCreated
 	EventTypeUpdated
 	EventTypeDeleted
+	EventTypeMoved
+	EventTypeAttr
+	EventTypeXAttr
+	EventTypeChmod
+	EventTypeChown
 )
 
 type FilesystemEvent struct {

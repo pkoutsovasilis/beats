@@ -63,9 +63,13 @@ func (v *VFSLink) ShouldIntercept(dirCache dirEntryCache) bool {
 
 func (v *VFSLink) Emit(dirCache dirEntryCache, emitter Emitter) error {
 	cacheEntry := &dirEntryVal{
-		Parent: v.ParentEntry,
-		Name:   v.FileName,
+		Parent:    v.ParentEntry,
+		Children:  nil,
+		Name:      v.FileName,
+		ParentIno: v.ParentIno,
 	}
+
+	v.ParentEntry.Children[cacheEntry] = struct{}{}
 
 	dirCache[dirEntryKey{
 		ParentIno: v.ParentIno,

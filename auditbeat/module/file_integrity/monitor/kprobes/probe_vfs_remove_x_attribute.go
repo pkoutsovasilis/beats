@@ -56,10 +56,10 @@ func (v *VFSRemoveXAttribute) ShouldIntercept(dirCache dirEntryCache) bool {
 	return true
 }
 
-func (v *VFSRemoveXAttribute) Emit(dirCache dirEntryCache, emitter Emitter) error {
+func (v *VFSRemoveXAttribute) Emit(_ dirEntryCache, emitter Emitter) error {
 
 	return emitter.Emit(FilesystemEvent{
-		Type:     EventTypeUpdated,
+		Type:     EventTypeXAttr,
 		FilePath: v.cacheEntry.BuildPath(),
 		PID:      v.PID,
 	})
