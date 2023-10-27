@@ -46,17 +46,12 @@ func init() {
 }
 
 func wipeRecursive(c dirEntryCache, val *dirEntryVal, dev uint64) {
-	if val.Children == nil || len(val.Children) == 0 {
-		delete(c, dirEntryKey{
-			ParentIno: val.ParentIno,
-			Dev:       dev,
-			Name:      val.Name,
-		})
-		return
-	}
-
 	for child := range val.Children {
 		wipeRecursive(c, child, dev)
+	}
+
+	if val.Parent != nil {
+		delete(val.Parent.Children, val)
 	}
 
 	delete(c, dirEntryKey{
@@ -72,11 +67,6 @@ func walkChildrenRecursive(c dirEntryCache, rootPath string, joinPath bool, val 
 		path = filepath.Join(rootPath, val.Name)
 	} else {
 		path = rootPath
-	}
-
-	if val.Children == nil || len(val.Children) == 0 {
-		call(path)
-		return
 	}
 
 	for child := range val.Children {
