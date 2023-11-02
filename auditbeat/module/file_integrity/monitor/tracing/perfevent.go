@@ -13,6 +13,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -55,6 +56,11 @@ type PerfChannel struct {
 	running uintptr
 	wg      sync.WaitGroup
 	cpus    CPUSet
+
+	// epoll
+	epollFD     int
+	epollEvents []syscall.EpollEvent
+	wakeUpFD    int
 
 	// Settings
 	attr        perf.Attr
@@ -124,6 +130,12 @@ func NewPerfChannel(cfg ...PerfChannelConf) (channel *PerfChannel, err error) {
 	if channel.cpus.NumCPU() < 1 {
 		return nil, errors.New("couldn't list online CPUs")
 	}
+
+	channel.epollFD, err = syscall.EpollCreate1(0)
+	if err != nil {
+		return nil, errors.New("couldn't list online CPUs")
+	}
+
 	// Set configuration
 	for _, fun := range cfg {
 		if err = fun(channel); err != nil {
@@ -238,11 +250,11 @@ func (c *PerfChannel) MonitorProbe(format ProbeFormat, decoder Decoder) error {
 		if err != nil {
 			return err
 		}
+		fd, err := ev.FD()
+		if err != nil {
+			return err
+		}
 		if len(format.Probe.Filter) > 0 {
-			fd, err := ev.FD()
-			if err != nil {
-				return err
-			}
 			fbytes := []byte(format.Probe.Filter + "\x00")
 			_, _, errNo := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.PERF_EVENT_IOC_SET_FILTER, uintptr(unsafe.Pointer(&fbytes[0])))
 			if errNo != 0 {
@@ -255,6 +267,13 @@ func (c *PerfChannel) MonitorProbe(format ProbeFormat, decoder Decoder) error {
 		if !doGroup {
 			if err := ev.MapRingNumPagesNoPoll(c.mappedPages); err != nil {
 				return fmt.Errorf("perf channel mapring failed: %w", err)
+			}
+
+			epollEvent := syscall.EpollEvent{Fd: int32(fd), Events: syscall.EPOLLIN | syscall.EPOLLET}
+			c.epollEvents = append(c.epollEvents, epollEvent)
+
+			if err := syscall.EpollCtl(c.epollFD, syscall.EPOLL_CTL_ADD, fd, &epollEvent); err != nil {
+				return fmt.Errorf("Failed to add CPU %d to epoll: %v\n", fd, err)
 			}
 		}
 	}
@@ -316,6 +335,9 @@ func (c *PerfChannel) Close() error {
 		if err := ev.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to close event channel: %w", err))
 		}
+	}
+	if err := syscall.Close(c.epollFD); err != nil {
+		errs = append(errs, fmt.Errorf("failed to close epoll fs: %w", err))
 	}
 	return errs.Err()
 }
@@ -406,10 +428,10 @@ type recordMerger struct {
 func newRecordMerger(sources []*perf.Event, channel *PerfChannel, pollTimeout time.Duration) recordMerger {
 	m := recordMerger{
 		evs:     sources,
+		records: make([]*perf.SampleRecord, len(sources)),
 		channel: channel,
 		timeout: pollTimeout,
 	}
-	m.records = make([]*perf.SampleRecord, len(sources))
 	return m
 }
 
@@ -441,14 +463,23 @@ func (m *recordMerger) nextSample(ctx context.Context) (sr *perf.SampleRecord, o
 			return sr, true
 		}
 		// No sample was available. Block until one of the ringbuffers has data.
-		_, closed, err := pollAll(m.evs, m.timeout)
+		var err error
+		for err = unix.EINTR; err == unix.EINTR; {
+			if ctx.Err() != nil {
+				return nil, false
+			}
+			_, err = syscall.EpollWait(m.channel.epollFD, m.channel.epollEvents, -1)
+		}
 		if err != nil {
-			m.channel.errC <- fmt.Errorf("poll failed: %w", err)
+			m.channel.errC <- os.NewSyscallError("epoll failed: %w", err)
 			return nil, false
 		}
-		// Some of the ring buffers closed. Report termination.
-		if closed > 0 {
-			return nil, false
+
+		for _, fd := range m.channel.epollEvents {
+			if fd.Events&(unix.EPOLLHUP|unix.EPOLLERR) != 0 {
+				m.channel.errC <- errors.New("a file descriptor was closed")
+				return nil, false
+			}
 		}
 	}
 }
@@ -491,33 +522,4 @@ func (m *recordMerger) readSampleNonBlock(ev *perf.Event, ctx context.Context) (
 		}
 	}
 	return nil, true
-}
-
-func pollAll(evs []*perf.Event, timeout time.Duration) (active int, closed int, err error) {
-	pollfds := make([]unix.PollFd, len(evs))
-	for idx, ev := range evs {
-		fd, err := ev.FD()
-		if err != nil {
-			return 0, 0, errors.New("failed to get descriptor for perf event channel")
-		}
-		pollfds[idx] = unix.PollFd{Fd: int32(fd), Events: unix.POLLIN}
-	}
-	ts := unix.NsecToTimespec(timeout.Nanoseconds())
-
-	for err = unix.EINTR; err == unix.EINTR; {
-		_, err = unix.Ppoll(pollfds, &ts, nil)
-	}
-	if err != nil {
-		return 0, 0, os.NewSyscallError("poll", err)
-	}
-
-	for _, fd := range pollfds {
-		if fd.Revents&unix.POLLIN != 0 {
-			active++
-		}
-		if fd.Revents&unix.POLLHUP != 0 {
-			closed++
-		}
-	}
-	return
 }
