@@ -5,10 +5,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// int vfs_open(const struct path *path, struct file *file)
+//static int do_open(struct nameidata *nd,
+//		   struct file *file, const struct open_flags *op)
 
 func init() {
-	registerKProbeWithFilter[VFSOpen]("vfs_open",
+	registerKProbeWithFilter[VFSOpen]("do_open",
 		"parent_ino=+64(+48(+24(+8($arg1)))):u64 "+
 			"created=+20($arg2):b1@20/64 "+
 			"file_name=+0(+40(+8($arg1))):string "+
@@ -18,7 +19,7 @@ func init() {
 			"parent_parent_ino=+64(+48(+24(+24(+8($arg1))))):u64",
 		"created == 1")
 
-	registerKRetProbe[KRetProbeGeneric]("vfs_open")
+	registerKRetProbe[KRetProbeGeneric]("do_open")
 }
 
 type VFSOpen struct {
