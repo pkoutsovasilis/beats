@@ -8,11 +8,19 @@ import (
 // ssize_t vfs_write(struct file *file, const char __user *buf, size_t count, loff_t *pos)
 
 func init() {
+	registerKProbe[VFSWrite]("vfs_writev",
+		"parent_ino=+64(+48(+24(+160($arg1)))):u64 "+
+			"file_name=+0(+40(+160($arg1))):string "+
+			"dev_major=+16(+40(+48(+24(+160($arg1))))):b12@20/32 "+
+			"dev_minor=+16(+40(+48(+24(+160($arg1))))):b10@0/32")
+
+	registerKRetProbe[KRetVFSWrite]("vfs_writev")
+
 	registerKProbe[VFSWrite]("vfs_write",
 		"parent_ino=+64(+48(+24(+160($arg1)))):u64 "+
 			"file_name=+0(+40(+160($arg1))):string "+
-			"dev_major=+16(+40(+168($arg1))):b12@20/32 "+
-			"dev_minor=+16(+40(+168($arg1))):b10@0/32")
+			"dev_major=+16(+40(+48(+24(+160($arg1))))):b12@20/32 "+
+			"dev_minor=+16(+40(+48(+24(+160($arg1))))):b10@0/32")
 
 	registerKRetProbe[KRetVFSWrite]("vfs_write")
 }
@@ -87,5 +95,5 @@ func (v *KRetVFSWrite) GetProbeEventKey() ProbeEventKey {
 }
 
 func (v *KRetVFSWrite) ShouldIntercept() bool {
-	return v.Ret > 0
+	return v.Ret >= 0
 }
