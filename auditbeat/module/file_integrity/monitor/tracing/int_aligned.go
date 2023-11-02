@@ -2,7 +2,7 @@
 // or more contributor license agreements. Licensed under the Elastic License;
 // you may not use this file except in compliance with the Elastic License.
 
-//go:build linux && !386 && !amd64 && !amd64p32
+//go:build linux && !386 && !amd64 && !amd64p32 && !arm64
 
 // Alignment-safe integer reading and writing functions.
 
@@ -16,7 +16,7 @@ import (
 var errBadSize = errors.New("bad size for integer")
 
 func copyInt(dst unsafe.Pointer, src unsafe.Pointer, len uint8) error {
-	copy((*(*[maxIntSizeBytes]byte)(src))[:len], (*(*[maxIntSizeBytes]byte)(src))[:len])
+	copy((*(*[maxIntSizeBytes]byte)(dst))[:len], (*(*[maxIntSizeBytes]byte)(src))[:len])
 	return nil
 }
 

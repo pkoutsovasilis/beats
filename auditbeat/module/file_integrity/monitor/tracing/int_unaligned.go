@@ -2,7 +2,7 @@
 // or more contributor license agreements. Licensed under the Elastic License;
 // you may not use this file except in compliance with the Elastic License.
 
-//go:build linux && (386 || amd64 || amd64p32)
+//go:build linux && (386 || amd64 || amd64p32 || arm64)
 
 // Integer reading and writing functions for platforms where alignment is not a problem.
 
