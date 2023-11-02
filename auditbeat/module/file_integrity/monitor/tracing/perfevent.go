@@ -19,7 +19,7 @@ import (
 	"github.com/joeshaw/multierror"
 	"golang.org/x/sys/unix"
 
-	"github.com/elastic/go-perf"
+	"github.com/pkoutsovasilis/go-perf"
 )
 
 var (
@@ -253,7 +253,7 @@ func (c *PerfChannel) MonitorProbe(format ProbeFormat, decoder Decoder) error {
 		c.events = append(c.events, ev)
 
 		if !doGroup {
-			if err := ev.MapRingNumPages(c.mappedPages); err != nil {
+			if err := ev.MapRingNumPagesNoPoll(c.mappedPages); err != nil {
 				return fmt.Errorf("perf channel mapring failed: %w", err)
 			}
 		}
@@ -417,10 +417,8 @@ func newRecordMerger(sources []*perf.Event, channel *PerfChannel, pollTimeout ti
 func (m *recordMerger) nextSample(ctx context.Context) (sr *perf.SampleRecord, ok bool) {
 	for {
 		// Return if the done channel is closed.
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return nil, false
-		default:
 		}
 		// Fill the records slice with the oldest sample in each ring-buffer,
 		// or nil if that ring-buffer is empty.
@@ -457,17 +455,20 @@ func (m *recordMerger) nextSample(ctx context.Context) (sr *perf.SampleRecord, o
 
 func (m *recordMerger) readSampleNonBlock(ev *perf.Event, ctx context.Context) (sr *perf.SampleRecord, ok bool) {
 	for ev.HasRecord() {
-		rec, err := ev.ReadRecord(ctx)
+		rec, err := ev.ReadRecordNonBlock()
 		if ctx.Err() != nil {
 			return nil, false
 		}
 		if err != nil {
-			if err == perf.ErrBadRecord {
+			if errors.Is(err, perf.ErrBadRecord) {
 				m.channel.lostC <- ^uint64(0)
 				continue
 			}
 			m.channel.errC <- err
 			return nil, false
+		}
+		if rec == nil {
+			return nil, true
 		}
 		h := rec.Header()
 		switch h.Type {

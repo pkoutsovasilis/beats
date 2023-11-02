@@ -1,6 +1,6 @@
 module github.com/elastic/beats/v7
 
-go 1.20
+go 1.21.3
 
 require (
 	cloud.google.com/go/bigquery v1.52.0
@@ -158,7 +158,7 @@ require (
 	golang.org/x/net v0.12.0
 	golang.org/x/oauth2 v0.10.0
 	golang.org/x/sync v0.3.0
-	golang.org/x/sys v0.12.0
+	golang.org/x/sys v0.13.0
 	golang.org/x/text v0.12.0
 	golang.org/x/time v0.3.0
 	golang.org/x/tools v0.9.1
@@ -218,6 +218,7 @@ require (
 	github.com/otiai10/copy v1.12.0
 	github.com/pierrec/lz4/v4 v4.1.16
 	github.com/pkg/xattr v0.4.9
+	github.com/pkoutsovasilis/go-perf v0.0.0-20231102110601-dcecab1e7407
 	github.com/sergi/go-diff v1.3.1
 	github.com/shirou/gopsutil/v3 v3.22.10
 	go.elastic.co/apm/module/apmelasticsearch/v2 v2.4.4
