@@ -623,13 +623,10 @@ func (s *state) onSockTerminated(sock *socket) (toReport helper.LinkedList) {
 		toReport.Append(&flows)
 	}
 	sock.flows = nil
-	if sock.process != nil {
-		sock.process.resolvedDomains = nil
-		sock.process = nil
-	}
 	delete(s.socks, sock.sock)
 	if sock.closing {
 		s.closing.Remove(sock)
+		sock.process = nil
 	} else {
 		s.moveToClosing(sock)
 	}
@@ -868,10 +865,8 @@ func (s *state) reportFlows(l *helper.LinkedList) (count int) {
 		if !s.reportFlow(f) {
 			continue
 		}
-		if f.process != nil {
-			f.process.resolvedDomains = nil
-			f.process = nil
-		}
+
+		f.process = nil
 		count++
 	}
 	return count
