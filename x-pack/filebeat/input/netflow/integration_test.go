@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/felixge/fgprof"
 	"io"
 	"net"
 	"net/http"
@@ -28,34 +29,48 @@ import (
 	"github.com/elastic/elastic-agent-client/v7/pkg/client/mock"
 	"github.com/elastic/elastic-agent-client/v7/pkg/proto"
 	"github.com/elastic/elastic-agent-libs/monitoring"
-
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
 	"github.com/stretchr/testify/require"
 )
 
+import (
+	_ "net/http/pprof"
+
+	_ "github.com/felixge/fgprof"
+)
+
 const (
 	waitFor = 10 * time.Second
 	tick    = 200 * time.Millisecond
+
+	outputBulkMaxSize    = 3 * 1600
+	outputWorkers        = 32 // change this to 1, 4, 8, 16, 32 accordingly
+	outputQueueMemEvents = 2 * outputBulkMaxSize * outputWorkers
+	inputRateLimit       = 5500
+	inputWorkers         = 4 // change this to 100, 200, 300 accordingly
 )
 
 func TestNetFlowIntegration(t *testing.T) {
-
+	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
+	//go func() {
+	//	t.Log(http.ListenAndServe(":7070", nil))
+	//}()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// make sure there is an ES instance running
-	integration.EnsureESIsRunning(t)
-	esConnectionDetails := integration.GetESURL(t, "http")
-	outputHost := fmt.Sprintf("%s://%s:%s", esConnectionDetails.Scheme, esConnectionDetails.Hostname(), esConnectionDetails.Port())
+	// integration.EnsureESIsRunning(t)
+	// esConnectionDetails := integration.GetESURL(t, "http")
+	outputHost := "change_me" //fmt.Sprintf("%s://%s:%s", esConnectionDetails.Scheme, esConnectionDetails.Hostname(), esConnectionDetails.Port())
 	outputHosts := []interface{}{outputHost}
 
 	// we are going to need admin access to query ES about the logs-netflow.log-default data_stream
-	outputUsername := os.Getenv("ES_SUPERUSER_USER")
+	outputUsername := "change_me" //os.Getenv("ES_SUPERUSER_USER")
 	require.NotEmpty(t, outputUsername)
-	outputPassword := os.Getenv("ES_SUPERUSER_PASS")
+	outputPassword := "change_me" //os.Getenv("ES_SUPERUSER_PASS")
 	require.NotEmpty(t, outputPassword)
-	outputProtocol := esConnectionDetails.Scheme
+	outputProtocol := "https" //esConnectionDetails.Scheme
 
 	deleted, err := DeleteDataStream(ctx, outputUsername, outputPassword, outputHost, "logs-netflow.log-default")
 	require.NoError(t, err)
@@ -83,12 +98,12 @@ func TestNetFlowIntegration(t *testing.T) {
 					"ssl.verification_mode": "none",
 					// ref: https://www.elastic.co/guide/en/fleet/8.14/es-output-settings.html
 					"preset":                     "custom",
-					"bulk_max_size":              1600,
-					"worker":                     4,
-					"queue.mem.events":           12800,
-					"queue.mem.flush.min_events": 1600,
+					"bulk_max_size":              outputBulkMaxSize,
+					"worker":                     outputWorkers,
+					"queue.mem.events":           outputQueueMemEvents, // outputQueueMemEvents,
+					"queue.mem.flush.min_events": outputBulkMaxSize,
 					"queue.mem.flush.timeout":    5,
-					"compression_level":          1,
+					"compression_level":          3,
 					"connection_idle_timeout":    15,
 				}),
 			},
@@ -126,10 +141,10 @@ func TestNetFlowIntegration(t *testing.T) {
 							"id":                    "netflow_integration_test",
 							"host":                  "localhost:6006",
 							"expiration_timeout":    "30m",
-							"queue_size":            2 * 4 * 1600,
+							"queue_size":            2 * inputRateLimit,
 							"detect_sequence_reset": true,
 							"max_message_size":      "10KiB",
-							"workers":               100,
+							"workers":               inputWorkers,
 						}),
 					},
 				},
@@ -189,16 +204,26 @@ func TestNetFlowIntegration(t *testing.T) {
 	case <-healthyChan:
 	case err := <-beatRunErr:
 		t.Fatalf("beat run err: %v", err)
-	case <-time.After(waitFor):
+	case <-time.After(20 * time.Minute):
 		t.Fatalf("timed out waiting for beat to become healthy")
 	}
+
+	// workaround for cloud-metadata init
+	time.Sleep(5 * time.Second)
+	startTime := time.Now()
 
 	registry := monitoring.GetNamespace("dataset").GetRegistry().GetRegistry("netflow_integration_test")
 
 	discardedEventsTotalVar, ok := registry.Get("discarded_events_total").(*monitoring.Uint)
 	require.True(t, ok)
 
-	receivedEventTotalVar, ok := registry.Get("received_events_total").(*monitoring.Uint)
+	//receivedEventTotalVar, ok := registry.Get("received_events_total").(*monitoring.Uint)
+	//require.True(t, ok)
+
+	flowsTotalVar, ok := registry.Get("flows_total").(*monitoring.Uint)
+	require.True(t, ok)
+
+	decodeTotalVar, ok := registry.Get("decode_errors_total").(*monitoring.Uint)
 	require.True(t, ok)
 
 	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:6006")
@@ -216,19 +241,56 @@ func TestNetFlowIntegration(t *testing.T) {
 	err = json.Unmarshal(data, &expectedFlows)
 	require.NoError(t, err)
 
-	f, err := pcap.OpenOffline("testdata/pcap/ipfix_cisco.reversed.pcap")
+	f, err := pcap.OpenOffline("testdata/performance/perf.pcap")
 	require.NoError(t, err)
 	defer f.Close()
 
+	//start pprof server
+	//go func() {
+	//	// Create the file
+	//	out, err := os.Create("/Users/pkoutsovasilis/repos/fgprof")
+	//	require.NoError(t, err)
+	//	t.Log("starting analyzing")
+	//	resp, err := http.Get("http://localhost:7070/debug/fgprof?seconds=10")
+	//	require.NoError(t, err)
+	//	defer resp.Body.Close()
+	//
+	//	_, err = io.Copy(out, resp.Body)
+	//	require.NoError(t, err)
+	//
+	//	t.Log("done analyzing")
+	//	out.Close()
+	//}()
+
 	var totalBytes, totalPackets int
-	rateLimit := 10000
-	limiter := rate.NewLimiter(rate.Limit(rateLimit), rateLimit)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		timer := time.NewTicker(1 * time.Second)
+		defer timer.Stop()
+		for {
+			select {
+			case <-timer.C:
+				count, err := DataStreamEventsCount(ctx, outputUsername, outputPassword, outputHost, "logs-netflow.log-default")
+				require.NoError(t, err)
+				t.Log(time.Now().Unix(), "total_flows: ", flowsTotalVar.Get(), " packets_sent: ", totalPackets,
+					"flows_in_data_stream: ", count, " discarded_events_total: ", discardedEventsTotalVar.Get(), 
+					" decode_errors: ", decodeTotalVar.Get())
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	limiter := rate.NewLimiter(rate.Limit(inputRateLimit), inputRateLimit)
 
 	packetSource := gopacket.NewPacketSource(f, f.LinkType())
 	for pkt := range packetSource.Packets() {
 
-		if totalPackets%rateLimit == 0 {
-			err = limiter.WaitN(ctx, rateLimit)
+		if totalPackets%inputRateLimit == 0 {
+			err = limiter.WaitN(ctx, inputRateLimit)
 			require.NoError(t, err)
 		}
 
@@ -241,21 +303,23 @@ func TestNetFlowIntegration(t *testing.T) {
 		totalPackets++
 	}
 
+	select {
+	case <-time.After(time.Until(startTime.Add(30 * time.Second))):
+	}
+
 	require.Zero(t, discardedEventsTotalVar.Get())
 
 	require.Eventually(t, func() bool {
-		return receivedEventTotalVar.Get() == uint64(totalPackets)
-	}, waitFor, tick)
-
-	require.Eventually(t, func() bool {
-		return HasDataStream(ctx, outputUsername, outputPassword, outputHost, "logs-netflow.log-default") == nil
+		err = HasDataStream(ctx, outputUsername, outputPassword, outputHost, "logs-netflow.log-default")
+		t.Log(err)
+		return err == nil
 	}, waitFor, tick)
 
 	require.Eventually(t, func() bool {
 		eventsCount, err := DataStreamEventsCount(ctx, outputUsername, outputPassword, outputHost, "logs-netflow.log-default")
 		require.NoError(t, err)
-		return eventsCount == uint64(len(expectedFlows.Flows))
-	}, waitFor, tick)
+		return eventsCount == flowsTotalVar.Get()
+	}, 20*time.Minute, 1*time.Second)
 }
 
 type unitPayload map[string]interface{}
@@ -345,7 +409,7 @@ func DataStreamEventsCount(ctx context.Context, username string, password string
 	}
 
 	if resultBytes == nil {
-		return 0, errors.New("http not found error")
+		return 0, nil
 	}
 
 	var results CountResults

@@ -84,7 +84,7 @@ func New(c *cfg.C) (beat.Processor, error) {
 		logger: logp.NewLogger("add_cloud_metadata"),
 	}
 
-	go p.init()
+	p.init()
 	return p, nil
 }
 
