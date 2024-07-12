@@ -202,6 +202,7 @@ require (
 	github.com/elastic/elastic-agent-autodiscover v0.7.0
 	github.com/elastic/elastic-agent-libs v0.9.13
 	github.com/elastic/elastic-agent-system-metrics v0.10.3
+	github.com/elastic/go-docappender/v2 v2.2.0
 	github.com/elastic/go-elasticsearch/v8 v8.14.0
 	github.com/elastic/go-sfdc v0.0.0-20240621062639-bcc8456508ff
 	github.com/elastic/mito v1.13.0
@@ -210,6 +211,7 @@ require (
 	github.com/felixge/fgprof v0.9.4
 	github.com/foxcpp/go-mockdns v0.0.0-20201212160233-ede2f9158d15
 	github.com/go-ldap/ldap/v3 v3.4.6
+	github.com/goccy/go-json v0.10.2
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/cel-go v0.19.0
 	github.com/googleapis/gax-go/v2 v2.12.0
@@ -288,7 +290,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.1 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.5 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
-	github.com/go-logr/logr v1.4.1 // indirect
+	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
@@ -296,7 +298,6 @@ require (
 	github.com/go-openapi/swag v0.22.3 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/gobuffalo/here v0.6.7 // indirect
-	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/godror/knownpb v0.1.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
@@ -328,7 +329,7 @@ require (
 	github.com/karrick/godirwalk v1.17.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
-	github.com/klauspost/compress v1.16.7 // indirect
+	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/kortschak/utter v1.5.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -366,11 +367,12 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20201027041543-1326539a0a0a // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
-	go.elastic.co/fastjson v1.1.0 // indirect
+	go.elastic.co/apm/module/apmzap/v2 v2.6.0 // indirect
+	go.elastic.co/fastjson v1.3.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	go.opentelemetry.io/otel v1.24.0 // indirect
-	go.opentelemetry.io/otel/metric v1.24.0 // indirect
-	go.opentelemetry.io/otel/trace v1.24.0 // indirect
+	go.opentelemetry.io/otel v1.28.0 // indirect
+	go.opentelemetry.io/otel/metric v1.28.0 // indirect
+	go.opentelemetry.io/otel/trace v1.28.0 // indirect
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
 	golang.org/x/term v0.21.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect

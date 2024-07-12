@@ -36,6 +36,10 @@ func (c *mockBeatClient) GetEventsCount() uint64 {
 	return c.eventsCounter.Load()
 }
 
+func (c *mockBeatClient) Process(event *beat.Event) (*beat.Event, error) {
+	return event, nil
+}
+
 // Publish mocks the Client Publish method
 func (c *mockBeatClient) Publish(e beat.Event) {
 	c.PublishAll([]beat.Event{e})

@@ -51,6 +51,10 @@ func (c *nilClient) Publish(event beat.Event) {
 	c.PublishAll([]beat.Event{event})
 }
 
+func (c *nilClient) Process(event *beat.Event) (*beat.Event, error) {
+	return event, nil
+}
+
 func (c *nilClient) PublishAll(events []beat.Event) {
 	L := len(events)
 	if L == 0 {

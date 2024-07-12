@@ -37,6 +37,8 @@ type PipelineConnector = Pipeline
 type Client interface {
 	// Publish the event
 	Publish(Event)
+	// Publish the event
+	Process(*Event) (*Event, error)
 	// PublishAll events specified in the Event array
 	PublishAll([]Event)
 	Close() error

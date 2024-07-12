@@ -131,6 +131,10 @@ func withPipelineEventCounter(pipeline beat.PipelineConnector, counter *eventCou
 	return pipeline
 }
 
+func (c *countingClient) Process(event *beat.Event) (*beat.Event, error) {
+	return c.client.Process(event)
+}
+
 func (c *countingClient) Publish(event beat.Event) {
 	c.counter.Add(1)
 	c.client.Publish(event)

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/goccy/go-json"
 	"net"
 	"sync"
 	"time"
@@ -21,6 +22,8 @@ import (
 	"github.com/elastic/beats/v7/libbeat/management/status"
 	"github.com/elastic/beats/v7/x-pack/filebeat/input/netflow/decoder"
 	"github.com/elastic/beats/v7/x-pack/filebeat/input/netflow/decoder/fields"
+	"github.com/elastic/go-docappender/v2"
+	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 
 	conf "github.com/elastic/elastic-agent-libs/config"
 	"github.com/elastic/elastic-agent-libs/logp"
@@ -141,6 +144,7 @@ func (n *netflowInput) Run(env v2.Context, connector beat.PipelineConnector) err
 		env.UpdateStatus(status.Failed, fmt.Sprintf("Failed to initialize netflow decoder: %v", err))
 		return fmt.Errorf("error initializing netflow decoder: %w", err)
 	}
+	n.queueC = make(chan packet, n.queueSize)
 
 	n.logger.Info("Starting netflow decoder")
 	if err := n.decoder.Start(); err != nil {
@@ -150,23 +154,53 @@ func (n *netflowInput) Run(env v2.Context, connector beat.PipelineConnector) err
 		return err
 	}
 
-	n.queueC = make(chan packet, n.queueSize)
-	for i := uint32(0); i < n.cfg.NumberOfWorkers; i++ {
-		client, err := connector.ConnectWith(beat.ClientConfig{
-			PublishMode: beat.DefaultGuarantees,
-			Processing: beat.ProcessingConfig{
-				EventNormalization: boolPtr(true),
-			},
-			EventListener: nil,
-		})
-		if err != nil {
-			env.UpdateStatus(status.Failed, fmt.Sprintf("Failed connecting to beat event publishing: %v", err))
-			n.logger.Errorw("Failed connecting to beat event publishing", "error", err)
-			n.stop()
-			return err
-		}
+	esConfig := elasticsearch8.Config{}
+	esConfig.Addresses = []string{"change_me"}
+	esConfig.Username = "change_me"
+	esConfig.Password = "change_me"
+	client, err := elasticsearch8.NewClient(esConfig)
+	if err != nil {
+		env.UpdateStatus(status.Failed, fmt.Sprintf("Failed connecting to elasticsearch: %v", err))
+		n.logger.Errorw("Failed connecting to elasticsearch", "error", err)
+		n.stop()
+		return err
+	}
 
-		n.clients = append(n.clients, client)
+	indexer, err := docappender.New(client, docappender.Config{
+		CompressionLevel:   3,
+		MaxRequests:        32,
+		MaxDocumentRetries: 3,
+		FlushBytes:         1024 * 1024, //512 * 1024,
+		FlushInterval:      5 * time.Second,
+		DocumentBufferSize: 51200,
+		Scaling: docappender.ScalingConfig{
+			Disabled: true,
+		},
+		RequireDataStream: false,
+	})
+	if err != nil {
+		env.UpdateStatus(status.Failed, fmt.Sprintf("Failed connecting to elasticsearch: %v", err))
+		n.logger.Errorw("Failed connecting to elasticsearch", "error", err)
+		n.stop()
+		return err
+	}
+
+	pipelineClient, err := connector.ConnectWith(beat.ClientConfig{
+		PublishMode: beat.DefaultGuarantees,
+		Processing: beat.ProcessingConfig{
+			EventNormalization: boolPtr(true),
+		},
+		EventListener: nil,
+	})
+	if err != nil {
+		env.UpdateStatus(status.Failed, fmt.Sprintf("Failed connecting to beat event publishing: %v", err))
+		n.logger.Errorw("Failed connecting to beat event publishing", "error", err)
+		n.stop()
+		return err
+	}
+
+	for i := uint32(0); i < n.cfg.NumberOfWorkers; i++ {
+
 		n.wg.Add(1)
 		go func(client beat.Client) {
 			defer n.wg.Done()
@@ -187,19 +221,43 @@ func (n *netflowInput) Run(env v2.Context, connector beat.PipelineConnector) err
 
 					fLen := len(flows)
 					if fLen != 0 {
-						evs := make([]beat.Event, fLen)
-						if flowsTotal := n.metrics.Flows(); flowsTotal != nil {
-							flowsTotal.Add(uint64(fLen))
+
+						_ = indexer
+						//evs := make([]beat.Event, fLen)
+						for _, flow := range flows {
+							event := toBeatEvent(flow, n.internalNetworks)
+							e, err := client.Process(&event)
+							if err != nil {
+								n.logger.Warnf("Error marshalling flows: %v", err)
+								continue
+							}
+							_, err = e.Fields.Put("@timestamp", event.Timestamp)
+							if err != nil {
+								n.logger.Warnf("Error marshalling flows: %v", err)
+								continue
+							}
+
+							encoded, err := json.Marshal(e.Fields)
+							if err != nil {
+								n.logger.Warnf("Error marshalling flows: %v", err)
+								continue
+							}
+
+							//n.metrics.flows.Add(uint64(len(encoded)))
+
+							err = indexer.Add(n.ctx, "logs-netflow.log-default", bytes.NewReader(encoded))
+							if err != nil {
+								n.logger.Warnf("Error indexing flows: %v", err)
+								continue
+							}
+							n.metrics.flows.Add(1)
 						}
-						for flowIdx, flow := range flows {
-							evs[flowIdx] = toBeatEvent(flow, n.internalNetworks)
-						}
-						client.PublishAll(evs)
 					}
+
 					n.udpMetrics.Log(pkt.data, pktStartTime)
 				}
 			}
-		}(client)
+		}(pipelineClient)
 	}
 
 	n.logger.Info("Starting udp server")

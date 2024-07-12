@@ -74,10 +74,27 @@ func (c *client) Publish(e beat.Event) {
 	c.publish(e)
 }
 
+func (c *client) Process(e *beat.Event) (*beat.Event, error) {
+	if c.processors != nil {
+		var err error
+
+		e, err = c.processors.Run(e)
+		//publish = event != nil
+		if err != nil {
+			// If we introduce a dead-letter queue, this is where we should
+			// route the event to it.
+			c.logger.Errorf("Failed to publish event: %v", err)
+		}
+
+	}
+
+	return e, nil
+}
+
 func (c *client) publish(e beat.Event) {
 	var (
-		event   = &e
-		publish = true
+		event = &e
+		//publish = true
 	)
 
 	c.onNewEvent()
@@ -92,7 +109,7 @@ func (c *client) publish(e beat.Event) {
 		var err error
 
 		event, err = c.processors.Run(event)
-		publish = event != nil
+		//publish = event != nil
 		if err != nil {
 			// If we introduce a dead-letter queue, this is where we should
 			// route the event to it.
@@ -104,30 +121,30 @@ func (c *client) publish(e beat.Event) {
 		e = *event
 	}
 
-	c.eventListener.AddEvent(e, publish)
-	if !publish {
-		c.onFilteredOut(e)
-		return
-	}
+	//c.eventListener.AddEvent(e, publish)
+	//if !publish {
+	//	c.onFilteredOut(e)
+	//	return
+	//}
 
-	e = *event
-	pubEvent := publisher.Event{
-		Content: e,
-		Flags:   c.eventFlags,
-	}
+	//e = *event
+	//pubEvent := publisher.Event{
+	//	Content: e,
+	//	Flags:   c.eventFlags,
+	//}
 
-	var published bool
-	if c.canDrop {
-		_, published = c.producer.TryPublish(pubEvent)
-	} else {
-		_, published = c.producer.Publish(pubEvent)
-	}
+	//var published bool
+	//if c.canDrop {
+	//	_, _ = c.producer.TryPublish(pubEvent)
+	//} else {
+	//	_, _ = c.producer.Publish(pubEvent)
+	//}
 
-	if published {
-		c.onPublished()
-	} else {
-		c.onDroppedOnPublish(e)
-	}
+	//if published {
+	//	c.onPublished()
+	//} else {
+	//	c.onDroppedOnPublish(e)
+	//}
 }
 
 func (c *client) Close() error {

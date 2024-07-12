@@ -29,6 +29,10 @@ type dummyClient struct {
 	Received chan int
 }
 
+func (c *dummyClient) Process(event *beat.Event) (*beat.Event, error) {
+	return event, nil
+}
+
 func newDummyClient() *dummyClient {
 	return &dummyClient{Received: make(chan int)}
 }

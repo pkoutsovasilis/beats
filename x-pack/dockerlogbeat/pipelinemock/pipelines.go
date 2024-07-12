@@ -18,6 +18,10 @@ type MockBeatClient struct {
 	mtx       sync.Mutex
 }
 
+func (c *MockBeatClient) Process(event *beat.Event) (*beat.Event, error) {
+	return event, nil
+}
+
 // GetEvents returns the published events
 func (c *MockBeatClient) GetEvents() []beat.Event {
 	c.mtx.Lock()
